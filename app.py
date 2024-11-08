@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 from io import StringIO
-import csv
 
 app = Flask(__name__)
 
@@ -64,26 +63,40 @@ IIT Madras,Engineering Physics,52
 IIT Kanpur,Engineering Physics,53
 IIT Kharagpur,Engineering Physics,54'''
     
-    for line in csv_content.strip().split('\n')[1:]:  # Skip header
-        college, branch, rank = line.split(',')
-        COLLEGE_DATA.append((college, branch, int(rank)))
+    try:
+        for line in csv_content.strip().split('\n')[1:]:  # Skip header
+            college, branch, rank = line.split(',')
+            COLLEGE_DATA.append((college, branch, int(rank)))
+    except Exception as e:
+        print(f"Error initializing data: {e}")
 
 def find_top_3_colleges(jee_rank):
-    eligible_options = [
-        option for option in COLLEGE_DATA 
-        if jee_rank <= option[2]
-    ]
-    return sorted(eligible_options, key=lambda x: x[2])[:3]
-
-@app.route('/', methods=['GET', 'POST'])
-def handle_request():
-    if request.method == 'GET':
-        return "Welcome to the College Selector API!"
-    
     try:
-        jee_rank = int(request.get_json()['jee_rank'])
+        eligible_options = [
+            option for option in COLLEGE_DATA 
+            if jee_rank <= option[2]
+        ]
+        return sorted(eligible_options, key=lambda x: x[2])[:3]
+    except Exception:
+        return []
+
+@app.route('/', methods=['GET'])
+def home():
+    return "Welcome to the College Selector API!"
+
+@app.route('/api/colleges', methods=['POST'])
+def get_colleges():
+    try:
+        data = request.get_json()
+        if not data or 'jee_rank' not in data:
+            return jsonify({"error": "Missing jee_rank in request"}), 400
+        
+        jee_rank = int(data['jee_rank'])
         top_3_colleges = find_top_3_colleges(jee_rank)
         
+        if not top_3_colleges:
+            return jsonify({"message": "No colleges found for given rank"}), 404
+
         return jsonify([
             {
                 "college": college,
@@ -91,12 +104,15 @@ def handle_request():
                 "cutoff_rank": rank
             }
             for college, branch, rank in top_3_colleges
-        ]), 200
+        ])
 
-    except (ValueError, KeyError, TypeError):
-        return jsonify({"error": "Invalid input"}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid rank format"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+# Initialize data when app starts
 init_college_data()
 
 if __name__ == '__main__':
-    app.run()
+    app.run(host='0.0.0.0', port=8080)
