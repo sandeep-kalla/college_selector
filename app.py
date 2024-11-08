@@ -1,14 +1,12 @@
-from flask import Flask, render_template, request, jsonify
-import os
-import csv
+from flask import Flask, request, jsonify
 from io import StringIO
+import csv
 
 app = Flask(__name__)
 
-# Store CSV data in memory as a list of dictionaries
+# Store CSV data in memory as a list of tuples for better memory efficiency
 COLLEGE_DATA = []
 
-# Initialize data when the app starts
 def init_college_data():
     csv_content = '''College,Branch,Rank
 IIT Bombay,Computer Science and Engineering,1
@@ -66,58 +64,39 @@ IIT Madras,Engineering Physics,52
 IIT Kanpur,Engineering Physics,53
 IIT Kharagpur,Engineering Physics,54'''
     
-    csv_file = StringIO(csv_content)
-    reader = csv.DictReader(csv_file)
-    for row in reader:
-        COLLEGE_DATA.append({
-            'College': row['College'],
-            'Branch': row['Branch'],
-            'Rank': row['Rank']
-        })
+    for line in csv_content.strip().split('\n')[1:]:  # Skip header
+        college, branch, rank = line.split(',')
+        COLLEGE_DATA.append((college, branch, int(rank)))
 
 def find_top_3_colleges(jee_rank):
-    eligible_options = []
-    try:
-        for row in COLLEGE_DATA:
-            cutoff_rank_str = row['Rank']
-            if cutoff_rank_str.isdigit():
-                cutoff_rank = int(cutoff_rank_str)
-                if jee_rank <= cutoff_rank:
-                    eligible_options.append((
-                        row['College'],
-                        row['Branch'],
-                        cutoff_rank
-                    ))
-        eligible_options.sort(key=lambda x: x[2])
-        return eligible_options[:3]
-    except Exception:
-        return None
+    eligible_options = [
+        option for option in COLLEGE_DATA 
+        if jee_rank <= option[2]
+    ]
+    return sorted(eligible_options, key=lambda x: x[2])[:3]
 
-@app.route('/')
-def home():
-    return "Welcome to the College Selector API!"
-
-@app.route('/', methods=['POST'])
-def api_colleges():
+@app.route('/', methods=['GET', 'POST'])
+def handle_request():
+    if request.method == 'GET':
+        return "Welcome to the College Selector API!"
+    
     try:
-        data = request.get_json()
-        jee_rank = int(data['jee_rank'])
+        jee_rank = int(request.get_json()['jee_rank'])
         top_3_colleges = find_top_3_colleges(jee_rank)
+        
+        return jsonify([
+            {
+                "college": college,
+                "branch": branch,
+                "cutoff_rank": rank
+            }
+            for college, branch, rank in top_3_colleges
+        ]), 200
 
-        if top_3_colleges is None:
-            return jsonify({"error": "Error processing request"}), 500
-
-        response = [
-            {"college": college, "branch": branch, "cutoff_rank": cutoff_rank}
-            for college, branch, cutoff_rank in top_3_colleges
-        ]
-        return jsonify(response), 200
-
-    except (ValueError, KeyError):
+    except (ValueError, KeyError, TypeError):
         return jsonify({"error": "Invalid input"}), 400
 
-# Initialize the college data when the app starts
 init_college_data()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()
